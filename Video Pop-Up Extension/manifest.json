@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Media Pop-up Extension",
+  "version": "5.0",
+  "description": "A Chrome extension that shows a media pop-up window when specific words are highlighted.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["*.png", "and.mp4", "is(chocholate).mp4",
+      "the(hands).mp4","some.mp4", "mediaMapping.json"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
