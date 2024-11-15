@@ -20,7 +20,6 @@ document.addEventListener('mouseup', handleTextSelection);
 
 function handleTextSelection() {
   const selection = window.getSelection();
-  
   if (selection.rangeCount > 0) {
     const selectedText = selection.toString().trim().toLowerCase();
 
@@ -46,7 +45,7 @@ function enqueueVideo(selectedText) {
       if (videoSrc) {
         // Add new video to the queue
         videoQueue.push({ videoSrc, word: selectedText });
-        
+
         // Start playing the next video if not already playing
         if (!isPlaying) {
           topRightOffset = 10; // Reset stacking offset
@@ -123,7 +122,9 @@ function createMediaPopup(videoSrc, word) {
 
   // Functionality for automatic closure of the popup
   videoElement.onended = () => {
-    closePopup(mediaPopup);
+    if (!persistent) {
+      closePopup(mediaPopup);
+    }
   };
 
   // Close button to allow manual closure
@@ -200,53 +201,3 @@ function dragElement(element) {
     document.onmousemove = null;
   }
 }
-
-// Enables permanent popups behavior, keeping the video displayed until manually closed
-function playPermanentVideo(videoSrc, word) {
-  let existingPopup = document.querySelector('.permanent-media-popup');
-  if (existingPopup) {
-    // If there's already a permanent popup, just update it
-    const videoElement = existingPopup.querySelector('video');
-    videoElement.src = chrome.runtime.getURL(videoSrc);
-    existingPopup.querySelector('.word-label').textContent = `Word: ${word}`;
-  } else {
-    // Create a new permanent popup
-    const mediaPopup = createPermanentPopup(videoSrc, word);
-    document.body.appendChild(mediaPopup);
-  }
-}
-
-// Creates a permanent video popup (it stays open until manually closed)
-function createPermanentPopup(videoSrc, word) {
-  const mediaPopup = document.createElement('div');
-  mediaPopup.className = 'permanent-media-popup';
-  mediaPopup.style.position = 'fixed';
-  mediaPopup.style.top = '10px';
-  mediaPopup.style.left = '10px';
-  mediaPopup.style.width = '320px';
-  mediaPopup.style.height = '270px';
-  mediaPopup.style.backgroundColor = 'white';
-  mediaPopup.style.border = '1px solid black';
-  mediaPopup.style.zIndex = 10000;
-  mediaPopup.style.padding = '10px';
-  mediaPopup.style.boxShadow = '0px 0px 10px rgba(0,0,0,0.5)';
-
-  const videoElement = document.createElement('video');
-  videoElement.src = chrome.runtime.getURL(videoSrc);
-  videoElement.style.width = '100%';
-  videoElement.style.height = '80%';
-  videoElement.controls = true;
-  videoElement.autoplay = true;
-
-  const wordLabel = document.createElement('div');
-  wordLabel.className = 'word-label';
-  wordLabel.innerText = `Word: ${word}`;
-  wordLabel.style.fontWeight = 'bold';
-  wordLabel.style.marginBottom = '5px';
-
-  mediaPopup.appendChild(wordLabel);
-  mediaPopup.appendChild(videoElement);
-
-  return mediaPopup;
-}
-
