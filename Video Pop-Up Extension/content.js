@@ -1,37 +1,51 @@
-// Add the CSS style for .shift-content to shift content left
 const style = document.createElement('style');
 style.textContent = `
   .shift-content {
-    margin-right: 320px; /* Width of the popup to shift content left */
+    margin-right: 350px; /* Shift content to the left to make room for popups */
+  }
+
+  .popup-container {
+    position: absolute;
+    top: 10px;
+    right: 350px; /* Adjusted right value to shift popups 350px to the left */
+    z-index: 10000;
+  }
+
+  .media-popup {
+    width: 320px;
+    height: 270px;
+    background-color: white;
+    border: 1px solid black;
+    padding: 10px;
+    box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.5);
+    cursor: move;
+    position: absolute;
   }
 `;
 document.head.appendChild(style);
 
-// Global variables to control video queue and popup behavior
-let videoQueue = [];
-let isPlaying = false;
-let popupPosition = 'top-right'; // Options: 'word', 'top-right', or 'permanent'
-let topRightOffset = 10; // Tracks the Y-offset for stacking popups
-const popupLifetime = 10000; // Lifetime of each popup in milliseconds
-let persistent = true; // Controls if videos should remain until closed
+let videoQueue = []; // Holds the video src, word, position and container
+let persistent = true; // Control for persistent videos
+let popupContainer = null;
+let currentTopPosition = 0; // Variable to control the vertical positioning of popups
 
-// Event listener for text selection to enqueue a video based on selected word
 document.addEventListener('mouseup', handleTextSelection);
 
 function handleTextSelection() {
   const selection = window.getSelection();
   if (selection.rangeCount > 0) {
     const selectedText = selection.toString().trim().toLowerCase();
+    const range = selection.getRangeAt(0);
+    const wordPosition = range.startOffset; // Position of the word
+    const container = range.startContainer; // Container where word was selected
 
-    // Only enqueue if the selection is not empty
     if (selectedText.length > 0) {
-      enqueueVideo(selectedText);
+      enqueueVideo(selectedText, wordPosition, container);
     }
   }
 }
 
-// Adds a video to the queue based on the selected text
-function enqueueVideo(selectedText) {
+function enqueueVideo(selectedText, wordPosition, container) {
   fetch(chrome.runtime.getURL('mediaMapping.json'))
     .then(response => {
       if (!response.ok) {
@@ -43,12 +57,22 @@ function enqueueVideo(selectedText) {
       const videoSrc = data[selectedText];
 
       if (videoSrc) {
-        // Add new video to the queue
-        videoQueue.push({ videoSrc, word: selectedText });
+        // Ensure the word is not already in the queue before adding a new video
+        if (!videoQueue.some(entry => entry.word === selectedText)) {
+          // Create new video object with position
+          const videoData = { videoSrc, word: selectedText, position: wordPosition, container };
 
-        // Start playing the next video if not already playing
-        if (!isPlaying) {
-          topRightOffset = 10; // Reset stacking offset
+          // Directly push the videoData to the queue in the order of appearance
+          videoQueue.push(videoData);
+
+          // Initialize popup container if it's not already initialized
+          if (!popupContainer) {
+            popupContainer = document.createElement('div');
+            popupContainer.classList.add('popup-container');
+            document.body.appendChild(popupContainer);
+          }
+
+          // Play the next video (if there is one)
           playNextVideo();
         }
       } else {
@@ -58,53 +82,30 @@ function enqueueVideo(selectedText) {
     .catch(error => console.error('Error fetching mediaMapping.json:', error));
 }
 
-// Plays the next video in the queue and handles the popup display
 function playNextVideo() {
   if (videoQueue.length === 0) {
     console.log("No more videos in the queue.");
     return;
   }
 
-  isPlaying = true;
   const { videoSrc, word } = videoQueue.shift();
   console.log(`Now playing: ${videoSrc} for word: ${word}`);
 
+  // Create and display a popup for the selected word and its video
   const mediaPopup = createMediaPopup(videoSrc, word);
-  document.body.appendChild(mediaPopup);
-  dragElement(mediaPopup);
+  popupContainer.appendChild(mediaPopup);
 
-  // Add shift-content class to body if position is 'top-right'
-  if (popupPosition === 'top-right') {
-    document.body.classList.add('shift-content');
-  }
+  // Add shift-content class to body if there is a video in the top-right corner
+  document.body.classList.add('shift-content');
 }
 
-// Creates and displays a popup for the selected word and its video
 function createMediaPopup(videoSrc, word) {
   const mediaPopup = document.createElement('div');
-  mediaPopup.className = 'media-popup';
-  mediaPopup.style.position = 'absolute';
-  mediaPopup.style.width = '320px';
-  mediaPopup.style.height = '270px';
-  mediaPopup.style.backgroundColor = 'white';
-  mediaPopup.style.border = '1px solid black';
-  mediaPopup.style.zIndex = 10000;
-  mediaPopup.style.padding = '10px';
-  mediaPopup.style.boxShadow = '0px 0px 10px rgba(0,0,0,0.5)';
-  mediaPopup.style.cursor = 'move';
+  mediaPopup.classList.add('media-popup');
 
-  // Position popup based on chosen location (e.g., by word or in the top-right corner)
-  if (popupPosition === 'word') {
-    const selection = window.getSelection();
-    if (!selection.rangeCount) return;
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
-    mediaPopup.style.top = `${rect.bottom + window.scrollY + 20}px`;
-    mediaPopup.style.left = `${rect.left + window.scrollX}px`;
-  } else { // 'top-right' position
-    mediaPopup.style.top = `${topRightOffset}px`;
-    mediaPopup.style.right = '10px';
-    topRightOffset += 290;
-  }
+  // Set the top position for the popup so that each popup is 300px below the previous one
+  mediaPopup.style.top = `${currentTopPosition}px`;
+  currentTopPosition += 300; // Increased spacing between popups to 300px
 
   // Setup video element within the popup
   const videoElement = document.createElement('video');
@@ -114,18 +115,24 @@ function createMediaPopup(videoSrc, word) {
   videoElement.controls = true;
   videoElement.autoplay = true;
 
+  let playCount = 0; // Track the number of times the video has played
+
+  // Video playback ended handling
+  videoElement.onended = () => {
+    playCount++;
+    if (!persistent && playCount < 2) {
+      videoElement.currentTime = 0;
+      videoElement.play();
+    } else if (!persistent) {
+      closePopup(mediaPopup);
+    }
+  };
+
   // Display selected word label
   const wordLabel = document.createElement('div');
   wordLabel.innerText = `Word: ${word}`;
   wordLabel.style.fontWeight = 'bold';
   wordLabel.style.marginBottom = '5px';
-
-  // Functionality for automatic closure of the popup
-  videoElement.onended = () => {
-    if (!persistent) {
-      closePopup(mediaPopup);
-    }
-  };
 
   // Close button to allow manual closure
   const closeButton = document.createElement('button');
@@ -142,38 +149,34 @@ function createMediaPopup(videoSrc, word) {
   mediaPopup.appendChild(videoElement);
   mediaPopup.appendChild(closeButton);
 
-  // Automatic removal of non-persistent popups after a certain duration
-  if (!persistent) {
-    setTimeout(() => {
-      closePopup(mediaPopup);
-    }, popupLifetime);
-  }
-
   return mediaPopup;
 }
 
-// Removes a popup and updates other popups' positions accordingly
 function closePopup(mediaPopup) {
   if (mediaPopup.parentElement) {
     mediaPopup.remove();
-    isPlaying = false;
-    updateTopRightPopups();
-    document.body.classList.remove('shift-content');
-    playNextVideo(); // Play the next video in the queue, if any
+
+    if (popupContainer.childElementCount === 0) {
+      document.body.classList.remove('shift-content');
+    }
+
+    playNextVideo();
   }
+
+  // Update the positions of remaining popups after a popup is closed
+  updatePopupsPosition();
 }
 
-// Adjusts top-right popups' positions after one is closed
-function updateTopRightPopups() {
+function updatePopupsPosition() {
   const popups = document.querySelectorAll('.media-popup');
-  topRightOffset = 10; // Reset offset before repositioning
-  popups.forEach((popup, index) => {
-    popup.style.top = `${topRightOffset}px`;
-    topRightOffset += 290;
+  currentTopPosition = 0; // Reset the top position counter
+
+  popups.forEach((popup) => {
+    popup.style.top = `${currentTopPosition}px`;
+    currentTopPosition += 300; // Ensure 300px spacing between popups
   });
 }
 
-// Enables drag functionality for popups
 function dragElement(element) {
   let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
   element.onmousedown = dragMouseDown;
